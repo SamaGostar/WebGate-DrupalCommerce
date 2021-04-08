@@ -1,5 +1,5 @@
-name = zarinpalzg
-description = Implements zarinpalzg payment services for use with Drupal Commerce.
+name = ZarinpalWG
+description = Implements Zarinpal payment services for use with Drupal Commerce.
 package = Commerce (contrib)
 dependencies[] = commerce
 dependencies[] = commerce_ui

@@ -2,9 +2,9 @@
 
 /**
  * @file
- * Implements Zarinpalwg payment services for use in Drupal Commerce.
+ * Implements Zarinpal WeGate payment services for use in Drupal Commerce.
  * @author
- * Farhad Hedayati Fard <hf.farhad@gmail.com> - 2012 (c)  and developed by Masoud Amini 
+ * sht-design.ir
  * @license
  * GPLv2
  */
@@ -12,7 +12,7 @@
 /**
  * Implements hook_commerce_payment_method_info().
  *
- * This hook will define the Zarinpalwg payment method
+ * This hook will define the Zarinpal payment method
  */
 function commerce_Zarinpalwg_commerce_payment_method_info()
 {
@@ -20,10 +20,10 @@ function commerce_Zarinpalwg_commerce_payment_method_info()
     
     $payment_methods['Zarinpalwg'] = array(
         'base' => 'commerce_Zarinpalwg',
-        'title' => t('Zarinpalwg'),
-        'short_title' => t('Zarinpalwg'),
-        'display_title' => t('Zarinpalwg'),
-        'description' => t('Integrates Zarinpalwg payment system'),
+        'title' => t('Zarinpal'),
+        'short_title' => t('Zarinpal'),
+        'display_title' => t('Zarinpal'),
+        'description' => t('Integrates Zarinpal payment system'),
         'terminal' => FALSE,
         'offsite' => TRUE,
         'offsite_autoredirect' => TRUE
@@ -43,15 +43,15 @@ function commerce_Zarinpalwg_settings_form($settings = NULL)
     $form = array();
     
     $settings = (array) $settings + array(
-        'merchant_id' => '',
+        'merchant' => '',
         'currency' => variable_get('commerce_default_currency', 'IRR')
     );
     
-    $form['merchant_id'] = array(
+    $form['merchant'] = array(
         '#type' => 'textfield',
-        '#title' => t('Merchant ID'),
-        '#description' => t('Your Zarinpalwg Merchant ID'),
-        '#default_value' => isset($settings['merchant_id']) ? $settings['merchant_id'] : ""
+        '#title' => t('Merchant'),
+        '#description' => t('Your Zarinpal Merchant'),
+        '#default_value' => isset($settings['merchant']) ? $settings['merchant'] : ""
     );
     $form['currency']    = array(
         '#type' => 'select',
@@ -75,8 +75,8 @@ function commerce_Zarinpalwg_settings_form($settings = NULL)
 function commerce_Zarinpalwg_redirect_form($form, &$form_state, $order, $payment_method)
 {
     // Return an error if the enabling action's settings haven't been configured.
-    if (empty($payment_method['settings']['merchant_id'])) {
-        drupal_set_message(t('Zarinpalwg is not configured for use. No Zarinpalwg merchant ID has been specified.'), 'error');
+    if (empty($payment_method['settings']['merchant'])) {
+        drupal_set_message(t('Zarinpal is not configured for use. No Zarinpal Merchant has been specified.'), 'error');
         return array();
     }
     
@@ -101,7 +101,7 @@ function commerce_Zarinpalwg_redirect_form($form, &$form_state, $order, $payment
 
 /**
  * Helper function for the redirect_form callback.
- * Builds an Zarinpalwg payment form from an order object.
+ * Builds an Zarinpal payment form from an order object.
  */
 function commerce_Zarinpalwg_build_redirect_form($form, &$form_state, $order, $settings)
 {
@@ -111,32 +111,36 @@ function commerce_Zarinpalwg_build_redirect_form($form, &$form_state, $order, $s
     // Get financial info
     $currency_code = $wrapper->commerce_order_total->currency_code->value();
     // price is saved in "Xyz" format meaning X.yz rials, therfore We need to devide it by 100 * 10 to get price in tomans
-    $amount        = (int) $wrapper->commerce_order_total->amount->value() / 1000;
-    
-    // Build the data array that will be translated into hidden form values.
-    $data = array(
-        array(
-            'MerchantID' => $settings['merchant_id'],
-            'Amount' => $amount,
-            'Description' => 'Commerce Order #' . $order->order_id,
-            'Email' => '',
-            'Mobile' => '',
-            'CallbackURL' => $settings['return']
-        )
+    $amount        = (int) $wrapper->commerce_order_total->amount->value() * 10;
+
+    $param_request = array(
+        'merchant_id' => $settings['merchant'],
+        'amount' => $amount,
+        'description' => $order->order_id,
+        'callback_url' => $settings['return']
     );
-    
-    $nusoap_path = drupal_get_path('module', 'commerce_Zarinpalwg') . '/nusoap.php';
-    include_once($nusoap_path);
-    
-    $client = new nusoap_client('https://www.zarinpal.com/pg/services/WebGate/wsdl', 'wsdl');
-    $res    = $client->call('PaymentRequest', $data);
-    
-    // Redirect to Zarinpalwg URL
-    if ($res['Status'] == 100) {
-        $url             = 'https://www.zarinpal.com/pg/StartPay/' . $res['Authority'];
+    $jsonData = json_encode($param_request);
+
+    $ch = curl_init('https://api.zarinpal.com/pg/v4/payment/request.json');
+    curl_setopt($ch, CURLOPT_USERAGENT, 'ZarinPal Rest Api v4');
+    curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'POST');
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $jsonData);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, array(
+        'Content-Type: application/json',
+        'Content-Length: ' . strlen($jsonData)
+    ));
+
+    $result = curl_exec($ch);
+    $err = curl_error($ch);
+    $result = json_decode($result, true, JSON_PRETTY_PRINT);
+    curl_close($ch);
+
+    if ($result['data']['code' == 100 ]) {
+        $url             = 'https://www.zarinpal.com/pg/StartPay/'. $result['data']["authority"];
         $form['#action'] = $url;
     } else {
-        $form['#action'] = $res['Status'];
+        $form['#action'] = $result;
     }
     $form['submit'] = array(
         '#type' => 'submit',
@@ -151,68 +155,70 @@ function commerce_Zarinpalwg_build_redirect_form($form, &$form_state, $order, $s
  */
 function commerce_Zarinpalwg_redirect_form_validate($order, $payment_method)
 {
-    $nusoap_path = drupal_get_path('module', 'commerce_Zarinpalwg') . '/nusoap.php';
-    include_once($nusoap_path);
     $wrapper = entity_metadata_wrapper('commerce_order', $order);
     
-    $merchant_id = $payment_method['settings']['merchant_id'];
     // price is saved in "Xyz" format meaning X.yz rials, therfore We need to devide it by 100 * 10 to get price in tomans 
-    $amount      = (int) $wrapper->commerce_order_total->amount->value() / 1000;
-    
-    if (isset($_GET['Authority']) AND $_GET['Status'] == "OK") {
-        $client   = new nusoap_client('https://www.zarinpal.com/pg/services/WebGate/wsdl', 'wsdl');
-        $res      = $client->call("PaymentVerification", array(
-            array(
-                'MerchantID' => $merchant_id,
-                'Authority' => $_GET['Authority'],
-                'Amount' => $amount
-            )
+    $amount      = (int) $wrapper->commerce_order_total->amount->value() * 10;
+    $Authority = $_GET['Authority'];
+    if (isset($_GET['Authority'])) {
+
+        $param_verify = array("merchant_id" =>  $payment_method['settings']['merchant'], "authority" => $_GET['Authority'], "amount" => $amount);
+        $jsonData = json_encode($param_verify);
+        $ch = curl_init('https://api.zarinpal.com/pg/v4/payment/verify.json');
+        curl_setopt($ch, CURLOPT_USERAGENT, 'ZarinPal Rest Api v4');
+        curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'POST');
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $jsonData);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, array(
+            'Content-Type: application/json',
+            'Content-Length: ' . strlen($jsonData)
         ));
-        $feedback = array(
-            'result' => $res['Status'],
-            'remote_id' => $res['RefID'],
-            'au' => $_GET['Authority']
-        );
-        if ($res->Status == 100) {
-            watchdog('commerce_Zarinpalwg', "Zarinpalwg payment #" . $feedback['remote_id'] . " verification succeeded, Zarinpalwg returned " + $res->Status, array(), WATCHDOG_INFO);
-            commerce_Zarinpalwg_process_transaction($order, $payment_method, $feedback);
+
+        $result = curl_exec($ch);
+        $err = curl_error($ch);
+        curl_close($ch);
+        $result = json_decode($result, true);
+
+        if ($result['data']['code'] == 100) {
+            watchdog('commerce_Zarinpalwg', "Zarinpal payment #" . $Authority . " verification succeeded, Zarinpal returned " + $result['data']['code'], array(), WATCHDOG_INFO);
+            commerce_Zarinpalwg_process_transaction($order, $payment_method, $result, $Authority);
             return TRUE;
         } else {
-            watchdog('commerce_Zarinpalwg', "Zarinpalwg payment #" . $feedback['remote_id'] . " verification failed, Zarinpalwg returned " + $res->Status, array(), WATCHDOG_ERROR);
+            watchdog('commerce_Zarinpalwg', "Zarinpal payment #" . $Authority . " verification failed, Zarinpal returned " + $result['data']['code'], array(), WATCHDOG_ERROR);
             return FALSE;
         }
     } else {
-        watchdog('commerce_Zarinpalwg', 'No valid au found', array(), WATCHDOG_ERROR);
+        watchdog('commerce_Zarinpalwg', 'No valid Authority found', array(), WATCHDOG_ERROR);
         return FALSE;
     }
 }
 
 /**
- * Process the payment transaction with the info received from Zarinpalwg
+ * Process the payment transaction with the info received from Zarinpal
  *
  * @param $order
  *   The loaded order that is being processed
  * @param $payment_method
  *   The payment method settings
  * @param $feedback
- *   The parameters received from Zarinpalwg regarding the payment
+ *   The parameters received from Zarinpal regarding the payment
  */
-function commerce_Zarinpalwg_process_transaction($order, $payment_method, $feedback)
+function commerce_Zarinpalwg_process_transaction($order, $payment_method, $resultver, $Authority)
 {
     $transaction    = commerce_payment_transaction_new('Zarinpalwg', $order->order_id);
-    $payment_status = commerce_Zarinpalwg_feedback_status($feedback['result']);
+    $payment_status = commerce_Zarinpalwg_feedback_status($resultver->Status);
     
     // identifying data
     $transaction->instance_id   = $payment_method['instance_id'];
-    $transaction->remote_id     = $feedback['remote_id'];
+    $transaction->authority     = $Authority;
     // payment amount details
     $transaction->amount        = $order->commerce_order_total[LANGUAGE_NONE][0]['amount'];
     $transaction->currency_code = $order->commerce_order_total[LANGUAGE_NONE][0]['currency_code'];
     // payment status
-    $transaction->remote_status = $feedback;
+    $transaction->remote_status = $resultver->Status;
     $transaction->status        = $payment_status['code'];
     $transaction->message       = $payment_status['message'];
-    $transaction->payload       = $feedback['au'];
+    $transaction->payload       = $Authority;
     commerce_payment_transaction_save($transaction);
     if ($payment_status['code'] == COMMERCE_PAYMENT_STATUS_FAILURE) {
         commerce_payment_redirect_pane_previous_page($order);
@@ -224,7 +230,7 @@ function commerce_Zarinpalwg_process_transaction($order, $payment_method, $feedb
 /**
  * Get a list of enabled currencies
  *
- * @TODO: figure out which currencies Zarinpalwg actually supports
+ * @TODO: figure out which currencies ZarinPal actually supports
  */
 function commerce_Zarinpalwg_currencies()
 {
@@ -250,29 +256,25 @@ function commerce_Zarinpalwg_feedback_status($status)
 {
     switch ($status) {
         /** SUCCESS **/
-        case 1: // Order stored
+        case 100: // Order stored
             $st  = COMMERCE_PAYMENT_STATUS_SUCCESS;
-            $msg = t('Payment processed by merchant');
+            $msg = t('Payment processed by Merchant');
             break;
         
         /** FAILURE **/
         case -1:
+        case -9:
+        case -10:
+        case -11:
             $st  = COMMERCE_PAYMENT_STATUS_FAILURE;
             $msg = t('Incomplete data');
             break;
-        case -2:
-            $st  = COMMERCE_PAYMENT_STATUS_FAILURE;
-            $msg = t('Invalid webservice');
-            break;
-        case -12:
-            $st  = COMMERCE_PAYMENT_STATUS_FAILURE;
-            $msg = t('Payment timed out');
-            break;
-        case -11: // Authorization not known
+        case -50:
             $st  = COMMERCE_PAYMENT_STATUS_FAILURE;
             $msg = t('Payment amount conflict');
             break;
-        case 0:
+        case -21:
+        case -51:
             $st  = COMMERCE_PAYMENT_STATUS_FAILURE;
             $msg = t('Payment canceled by user');
             break;
